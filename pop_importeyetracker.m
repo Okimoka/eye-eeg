@@ -284,11 +284,19 @@ try
     
     %% synchronize ET and EEG based on start-event and end-event
     fprintf('\n%s(): Synchronizing EEG and eye tracking data...',mfilename);
-    [ET,eegEvents,syncErrorTable] = synchronize(ET, startEndEvent, eegEvents, EEG.srate, EEG.pnts, doRegression, filterEyetrack, plotFig, searchRadius);
+    [ET,eegEvents,syncErrorTable,syncMetrics] = synchronize(ET, startEndEvent, eegEvents, EEG.srate, EEG.pnts, doRegression, filterEyetrack, plotFig, searchRadius);
        
     %% store info about sync quality with dataset (EEG.etc)
     EEG.etc.eyetracker_syncquality = syncErrorTable;
     
+    
+    if ~isfield(EEG,'etc') || isempty(EEG.etc)
+        EEG.etc = struct();
+    end
+    EEG.etc.eyetracker_syncmetrics = syncMetrics;
+
+
+
     %% add ET data and new channel labels to EEG structure
     % test for illegal characters in channel names incompatible with EEGLAB
     changedName = false;

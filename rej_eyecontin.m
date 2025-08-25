@@ -121,12 +121,17 @@ elseif length(chns) ~= length(minvals)
     error('%s(): For each channel to test for out-or-range data, please specify one value in minvals and maxvals!',mfilename)
 end
 
+
+rejMetrics = struct();
+rejMetrics.extra_window_samples = windowsize;
+
+
 %% collect indices of out-of-range samples across all channels
 fprintf('\n%s(): Rejecting intervals with out-of-range eye track',mfilename)
 ix_bad = [];
 for c = 1:length(chns)
     [chnid chntxt] = eeg_decodechan(EEG.chanlocs,chns(c)); % get channel names
-    
+
     if checkminima && checkmaxima
         fprintf('\nChannel %i \"%s\": rejecting values < %i or > %i',chnid,chntxt{:},minvals(c),maxvals(c));
         ix = find(EEG.data(chns(c),:) < minvals(c) | EEG.data(chns(c),:) > maxvals(c));
@@ -146,8 +151,17 @@ end
 
 %% bad samples found?
 if isempty(ix_bad)
+
+    rejMetrics.out_of_range_found = false;
+    rejMetrics.n_bad_samples = 0;
+    rejMetrics.n_bad_intervals = 0;
+    % rejMetrics.rejection_method = rejectionmethod;
+    % rejMetrics.n_bad_et_markers_added = 0;
+
     fprintf('\n\nNo out-of-range samples found.\n')
 else
+
+
     % identify start and end indices of contiguous blocks of bad data
     seq_bad = findsequence2(ix_bad');
     
@@ -171,13 +185,19 @@ else
     
     fprintf('\n\nFound %i out-of-range samples in %i continuous intervals of bad data',length(ix_bad),size(seq_bad,1));
     
+    rejMetrics.out_of_range_found = true;
+    rejMetrics.n_bad_samples = length(ix_bad);
+    rejMetrics.n_bad_intervals = size(seq_bad,1);
+    % rejMetrics.rejection_method = rejectionmethod;
+
+
     % reject bad data
     switch rejectionmethod
         
         case 1 % remove using pop_select
             fprintf('\nRemoving bad intervals from continuous data...\n\n')
             EEG = pop_select(EEG,'nopoint',seq_bad(:,1:2));
-            
+            % rejMetrics.n_bad_et_markers_added = 0;
         case 2 % add "bad_ET" marker for each bad interval
 
             % Update march 2018 (OD)
@@ -187,10 +207,14 @@ else
             seq_bad(:,3) = seq_bad(:,2)-seq_bad(:,1) + 1;
             % add bad ET markers
             EEG = addevents(EEG,[seq_bad(:,1) seq_bad(:,3)],{'latency','duration'},'bad_ET');
+            % rejMetrics.n_bad_et_markers_added = size(seq_bad,1);
             
         otherwise
             error('%s(): rejection method input not recognized',mfilename)
     end
 end
+
+if ~isfield(EEG, 'etc') || isempty(EEG.etc), EEG.etc = struct(); end
+EEG.etc.rej_eyecontin_quality = rejMetrics;
 
 end

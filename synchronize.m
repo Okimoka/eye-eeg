@@ -22,12 +22,28 @@
 % along with this program; if not, write to the Free Software
 % Foundation, 51 Franklin Street, Boston, MA 02110-1301, USA
 
-function [ET, eegEvents, syncQuality] = synchronize(ET, startEndEvent, eegEvents, eegrate, n_eegsmp, doRegression, filterEyetrack, plotFig, searchRadius)
+function [ET, eegEvents, syncQuality, metrics] = synchronize(ET,startEndEvent,eegEvents,eegrate,n_eegsmp,doRegression,filterEyetrack,plotFig,searchRadius)
 
 if nargin < 9
     help(mfilename)
     return;
 end
+
+metrics = struct( ...
+    'n_eeg_samples', [], ...
+    'n_et_samples', [], ...
+    'eeg_sampling_rate', [], ...
+    'est_et_sampling_rate', [], ...
+    'downsample_flag', [], ...
+    'num_pauses', [], ...
+    'pause_threshold_samples', [], ...
+    'num_shared_events', [], ...
+    'num_unmatched_events', [], ...
+    'mean_abs_sync_error_ms', [], ...
+    'regression_R2', NaN );
+
+
+
 
 %% get start-event & end-event for synchronization
 startevent = startEndEvent(1);
@@ -86,6 +102,13 @@ eyerate = (n_etsmp_range / n_eegsmp_range) * eegrate; % estimated ET rate
 %
 % % get median inter-sample-intervals for ET...
 % et_df = median(diff(ET.data(ix_starteventSample:ix_endeventSample,1)));
+
+metrics.n_eeg_samples    = n_eegsmp_range;
+metrics.n_et_samples     = n_eyesmp_range;
+metrics.eeg_sampling_rate = eegrate;
+metrics.est_et_sampling_rate = eyerate;
+metrics.downsample_flag  = (eyerate > eegrate);
+
 
 %% feedback: sampling rates
 fprintf('\n\n-- %i EEG samples in synchronization range',n_eegsmp_range);
@@ -155,6 +178,8 @@ if doRegression
     
     % now repeat linspace() with "refined" latencies of start-/end-event
     ET.newtime = linspace(starteventTime, endeventTime, n_eegsmp_range)';
+
+    metrics.regression_R2 = r2;
 end
 
 
@@ -189,7 +214,10 @@ if ~isempty(ET.data)
     % values would need to be set higher
     SET_REC_PAUSES_TO_ZERO = true;
     PAUSE_THRESHOLD        = 3; % jump of 3 median inter-sample-intervals
-    
+
+    metrics.num_pauses       = 0;
+    metrics.pause_threshold  = PAUSE_THRESHOLD;
+
     if SET_REC_PAUSES_TO_ZERO
                 
         d               = diff(ET.data(:,1));
@@ -201,6 +229,8 @@ if ~isempty(ET.data)
         
         % give feedback
         if ~isempty(ix_StartOfPause)
+            metrics.num_pauses       = length(ix_StartOfPause);
+            metrics.pause_threshold  = PAUSE_THRESHOLD;
             fprintf('\n\n%s(): I detected %i PAUSES in the eye-tracking recording!',mfilename,length(ix_StartOfPause))
             fprintf('\nPauses were defined as jumps in the ET time stamp > %i samples',PAUSE_THRESHOLD)
             fprintf('\nThe last data sample before and first sample after each pause')
@@ -333,7 +363,16 @@ n_nopartner  = sum(isnan(eegEventHasPartner(:,2)));
 [count, bin] = hist(eegEventHasPartner(:,end),-searchRadius:searchRadius);
 syncQuality  = [bin;count]';
 
+
 %% feedback on synch. quality
+
+metrics.num_shared_events   = n_total - n_nopartner;
+metrics.num_unmatched_events = n_nopartner;
+
+avg_abs_error = sum(abs(syncQuality(:,1)).*syncQuality(:,2)) ./ sum(syncQuality(:,2));
+metrics.mean_abs_sync_error_ms = (avg_abs_error * 1000)/eegrate;
+
+
 fprintf('\nShared events of same type less than +/- %i samples apart: %i',searchRadius,n_total-n_nopartner);
 fprintf('\n\nSynchronization quality:')
 if n_nopartner == 0

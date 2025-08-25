@@ -54,6 +54,21 @@
 
 function et = parsesmi(inputFile,outputMatFile,triggerKeyword)
 
+
+% Before opening the file (e.g. right after function signature)
+et.etc = struct();
+
+% Initialise quality-flag structure with sensible defaults
+et.etc.parsesmi_quality = struct( ...
+    'file_found',        true, ...    % assume file is present until proven otherwise
+    'column_mismatch',   false, ...
+    'keyword_provided',  false, ...
+    'keyword_found',     false, ...
+    'other_messages_found', false, ...
+    'saved',             false ...
+);
+
+
 if nargin < 2
     help(mfilename);
     return;
@@ -65,6 +80,7 @@ fprintf('\n-- reading txt...')
 
 fid = fopen(inputFile,'r');
 if fid == -1
+   et.etc.parsesmi_quality.file_found = false;
    error('\nThe source file ''%s'' was not found.\n',inputFile)
 end
 B = fread(fid,'*char')';
@@ -127,6 +143,7 @@ fprintf('\n\tDone.')
 
 % 1: check for messages containing special KEYWORD
 if exist('triggerKeyword','var')
+    et.etc.parsesmi_quality.keyword_provided = true;
     
     if isempty(triggerKeyword)
         warning('\n\n%s(): You are using an empty string as the keyword (before the integer event number).',mfilename)
@@ -139,6 +156,7 @@ if exist('triggerKeyword','var')
     test2 = [test1{:}]';    
     test3 = cellfun(@str2double,test2,'UniformOutput',false);
     et.event = cell2mat(test3);
+    et.etc.parsesmi_quality.keyword_found = ~isempty(et.event);
     if isempty(et.event)
         warning('\n\n%s(): The keyword string you have provided (''%s'') was not found in any messages of the ET file (%s). Please check your messages and make sure they contain the specified keyword.',...
             mfilename, triggerKeyword, inputFile)
@@ -206,6 +224,8 @@ if isfield(et,'messages') & ~isempty(et.messages)
             et.othermessages(j).timestamp = timestamps(j); % numeric timestamps
             et.othermessages(j).msg       = tmp{j}; % the msg string
         end
+
+        et.etc.parsesmi_quality.other_messages_found = isfield(et,'othermessages') && ~isempty(et.othermessages);
         clear tmp test* edfColHeader
     end
 else
@@ -215,9 +235,11 @@ end
 %% save
 fprintf('\n-- saving structure as mat...')
 save(outputMatFile,'-struct','et')
+et.etc.parsesmi_quality.saved = true;
 fprintf('\n\tDone.')
 
 if column_mismatch
+    et.etc.parsesmi_quality.column_mismatch = (nColh ~= nDat);
     % recent IDF converter versions add extra column names in header
     fprintf('\n\nNote: Number of data column names for numerical data (%i) differed from number of actual data columns (%i).',nColh,nDat);
     fprintf('\nThis is not necessarily a problem, since some IDF converter versions add extra column names (e.g., \"AUX1\").');

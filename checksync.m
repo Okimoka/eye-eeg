@@ -79,6 +79,8 @@
 
 function [EEG] = checksync(EEG, chan_gaze_x, chan_heog_l, chan_heog_r, plotfig)
 
+xcorrMetrics = struct();
+
 fprintf('\n%s(): Computing cross correlation function between eye tracker and EOG channels...',mfilename);
 fprintf('\n\nNote: you need clean eye-tracking and EOG data for this function to produce sensible results.');
 fprintf('\nFor example, it is usually necessary to first reject intervals with bad or missing ET data (e.g. blinks)');
@@ -159,13 +161,22 @@ else
     fprintf('\n-- Gaze and EOG seem perfectly aligned');
 end
 
+
+
 %% also report correlation coefficient (r) of the two full time series (at lag 0)
 r = corrcoef(gaze_x,heog);
 fprintf('\n-- At a lag of zero, the Pearson correlation coefficient between both signals is r = %.2f',r(1,2));
 
+xcorrMetrics.sampleDiff = sampleDiff;
+xcorrMetrics.corrcoef = r(1,2);
+
 %% write values to "EEG.etc" so they are stored with the dataset
 fprintf('\n\nThe cross-correlation function is stored in the field \"EEG.etc.xcorr_eyeeeg\".');
 EEG.etc.xcorr_eyeeeg = [xc; lags]; % first row: xc-values, second row: lags
+
+if ~isfield(EEG, 'etc') || isempty(EEG.etc), EEG.etc = struct(); end
+EEG.etc.checksync_quality = xcorrMetrics;
+
 
 %% show figure with cross-correlation function
 if plotfig

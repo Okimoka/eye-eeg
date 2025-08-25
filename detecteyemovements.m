@@ -135,6 +135,10 @@ function EEG = detecteyemovements(EEG,left_eye_xy,right_eye_xy,vfac,mindur,degpe
 allsac = [];
 allfix = [];
 
+
+eyemovementmetrics = struct();
+
+
 % data of which eye is available?
 ldata  = false;
 if length(left_eye_xy) == 2, ldata = true; end
@@ -186,7 +190,7 @@ else
     fprintf('\nVelocity threshold factor (vfac):  %.2f SD',vfac);
     fprintf('\nMinimum saccade duration (mindur): %.2f samples (%.2f ms)',mindur,mindur*1000/EEG.srate);
     if ~isempty(degperpixel) | isnan(degperpixel) % bugfix 2016-11-12 by OD: added case if degperpixel = NaN (from GUI input)
-        fprintf('\nVisual angle per screen pixel:     %f°',degperpixel);
+        fprintf('\nVisual angle per screen pixel:     %fï¿½',degperpixel);
         metric = 'deg';
     else
         fprintf('\nWARNING: No input provided for degperpixel!\nSpatial saccade properties are given in original metric (pixel?)');
@@ -618,6 +622,9 @@ if clusterwarning && clustermode == 1
 end
 
 
+eyemovementmetrics.badepochs = sum(badepochs);
+eyemovementmetrics.badsamples = nbadsmp;
+
 %% user feedback if bad eye-tracking data (values <= 0) but no bad_ET events
 if sum(badepochs)>0 & isempty(ix_badETevent)
     warning('\nI found bad or missing data (i.e. values <= 0) in the ET channels but no \"bad_ET" events!');
@@ -634,9 +641,19 @@ end
 
 %% user feedback: saccade & fixation detection
 fprintf('\n--------------------------------------------------------------------');
-fprintf('\nVelocity thresholds used:'); if nepochs > 1, fprintf(' (mean across epochs):'); end
-if ldata, fprintf('\n\tLeft eye.  Horiz.: %.2f %s/s. Vert.: %.2f %s/s',mean(l_msdx(e)*vfac*degperpixel),metric,mean(l_msdy*vfac*degperpixel),metric); end
-if rdata, fprintf('\n\tRight eye. Horiz.: %.2f %s/s. Vert.: %.2f %s/s',mean(r_msdx(e)*vfac*degperpixel),metric,mean(r_msdy*vfac*degperpixel),metric); end
+fprintf('\nVelocity thresholds used:'); 
+if nepochs > 1, fprintf(' (mean across epochs):'); end
+
+if ldata
+    fprintf('\n\tLeft eye.  Horiz.: %.2f %s/s. Vert.: %.2f %s/s', ...
+        vfac * mean(l_msdx) * degperpixel, metric, ...
+        vfac * mean(l_msdy) * degperpixel, metric);
+end
+if rdata
+    fprintf('\n\tRight eye. Horiz.: %.2f %s/s. Vert.: %.2f %s/s', ...
+        vfac * mean(r_msdx) * degperpixel, metric, ...
+        vfac * mean(r_msdy) * degperpixel, metric);
+end
 fprintf('\n--------------------------------------------------------------------')
 if ~isempty(allsac)
     fprintf('\n%i saccades detected:',size(allsac,1));
@@ -650,6 +667,74 @@ if ~isempty(allfix)
     if ldata,fprintf('\n\tMedian fix. pos. left  eye: Horiz.: %.2f px. Vert.: %.2f px',median(allfix(:,4)),median(allfix(:,5))); end
     if rdata,fprintf('\n\tMedian fix. pos. right eye: Horiz.: %.2f px. Vert.: %.2f px',median(allfix(:,6)),median(allfix(:,7))); end
 end
+
+
+if ldata
+    if globalthresh || nepochs==1
+        eyemovementmetrics.vel_thres_hor_L = vfac * mean(l_msdx) * degperpixel;
+        eyemovementmetrics.vel_thres_ver_L = vfac * mean(l_msdy) * degperpixel;
+    else
+        eyemovementmetrics.vel_thres_hor_L_per_epoch = vfac * l_msdx(:) * degperpixel;
+        eyemovementmetrics.vel_thres_ver_L_per_epoch = vfac * l_msdy(:) * degperpixel;
+        eyemovementmetrics.vel_thres_hor_L_mean = vfac * mean(l_msdx) * degperpixel;
+        eyemovementmetrics.vel_thres_ver_L_mean = vfac * mean(l_msdy) * degperpixel;
+    end
+end
+if rdata
+    if globalthresh || nepochs==1
+        eyemovementmetrics.vel_thres_hor_R = vfac * mean(r_msdx) * degperpixel;
+        eyemovementmetrics.vel_thres_ver_R = vfac * mean(r_msdy) * degperpixel;
+    else
+        eyemovementmetrics.vel_thres_hor_R_per_epoch = vfac * r_msdx(:) * degperpixel;
+        eyemovementmetrics.vel_thres_ver_R_per_epoch = vfac * r_msdy(:) * degperpixel;
+        eyemovementmetrics.vel_thres_hor_R_mean = vfac * mean(r_msdx) * degperpixel;
+        eyemovementmetrics.vel_thres_ver_R_mean = vfac * mean(r_msdy) * degperpixel;
+    end
+end
+
+eyemovementmetrics.nsaccades     = size(allsac,1);
+eyemovementmetrics.saccade_amplitudes = median(allsac(:,6));
+eyemovementmetrics.saccade_durations = median(allsac(:,3))*1000/EEG.srate;
+
+eyemovementmetrics.nfixations    = size(allfix,1);
+eyemovementmetrics.fixation_durations = median(allfix(:,3))*1000/EEG.srate;
+
+if ~isempty(allfix)
+    % Left eye (if recorded)
+    if ldata
+        eyemovementmetrics.median_fix_pos_left_x  = median(allfix(:,4), 'omitnan'); % X_L
+        eyemovementmetrics.median_fix_pos_left_y  = median(allfix(:,5), 'omitnan'); % Y_L
+    else
+        eyemovementmetrics.median_fix_pos_left_x  = NaN;
+        eyemovementmetrics.median_fix_pos_left_y  = NaN;
+    end
+
+    % Right eye (if recorded)
+    if rdata
+        eyemovementmetrics.median_fix_pos_right_x = median(allfix(:,6), 'omitnan'); % X_R
+        eyemovementmetrics.median_fix_pos_right_y = median(allfix(:,7), 'omitnan'); % Y_R
+    else
+        eyemovementmetrics.median_fix_pos_right_x = NaN;
+        eyemovementmetrics.median_fix_pos_right_y = NaN;
+    end
+
+    % Average-of-eyes (uses nanmean in upstream code, so works mono/binocular)
+    eyemovementmetrics.median_fix_pos_avgLR_x     = median(allfix(:,8), 'omitnan');
+    eyemovementmetrics.median_fix_pos_avgLR_y     = median(allfix(:,9), 'omitnan');
+else
+    eyemovementmetrics.median_fix_pos_left_x  = NaN;
+    eyemovementmetrics.median_fix_pos_left_y  = NaN;
+    eyemovementmetrics.median_fix_pos_right_x = NaN;
+    eyemovementmetrics.median_fix_pos_right_y = NaN;
+    eyemovementmetrics.median_fix_pos_avgLR_x = NaN;
+    eyemovementmetrics.median_fix_pos_avgLR_y = NaN;
+end
+
+
+
+
+if ~isfield(EEG, 'etc') || isempty(EEG.etc), EEG.etc = struct(); end
+EEG.etc.eyemovements_quality = eyemovementmetrics;
 
 
 %% plot figure with eye movements properties
